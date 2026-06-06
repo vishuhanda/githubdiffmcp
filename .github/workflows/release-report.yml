@@ -1,0 +1,53 @@
+name: Generate Release Report
+
+on:
+  workflow_dispatch:
+    inputs:
+      repositories:
+        description: 'JSON array of repositories (example format: [{"owner":"org","repo":"name","base":"v1","head":"v2"}])'
+        required: true
+        default: '[{"owner":"jci-products","repo":"acvs-jci-osp-api-gateway-services","base":"1.1.38","head":"1.1.43"}]'
+
+jobs:
+  generate-report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Run release report generator
+        env:
+          REPOS_JSON: ${{ github.event.inputs.repositories }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JIRA_URL: ${{ secrets.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os, json, importlib.util
+
+          # Load repositories from the workflow input
+          repos = json.loads(os.environ['REPOS_JSON'])
+
+          # Dynamically load the user's script as a module
+          spec = importlib.util.spec_from_file_location("gitdiff", "gitdiffversions.py")
+          mod = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(mod)
+
+          # Override the REPOSITORIES variable in the loaded module
+          mod.REPOSITORIES = repos
+
+          # Run the module's main entrypoint
+          mod.main()
+          PY
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release_report
+          path: release_report.txt
